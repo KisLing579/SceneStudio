@@ -195,6 +195,3 @@ Output locations differ between tool families: `generate_shots.py` writes to Sce
 | `GET /api/projects/{project_id}/media/{kind}/{index}` | Serve thumbnails, images, clips, or assembled output |
 
 The service defaults to `127.0.0.1` and has no account authentication. It accepts server-side project paths and is intended for local or trusted-network use. The web dependency list alone is insufficient for GPU generation: validate the LTX runtime, configured weights, and FFmpeg independently when diagnosing failed jobs.
-#   S c e n e S t u d i o  
- #   S c e n e S t u d i o  
- 
