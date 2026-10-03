@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>即梦图像 Prompt 编辑与重抽</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --border: #e3e6ea;
+    --text: #1f2328;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --danger: #dc2626;
+    --ok: #16a34a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: #fff; border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  }
+  header .title { font-weight: 600; margin-right: 8px; }
+  header input[type="text"] {
+    flex: 1 1 320px; min-width: 220px;
+    padding: 8px 12px; font-size: 14px;
+    border: 1px solid var(--border); border-radius: 6px;
+  }
+  button {
+    padding: 8px 14px; font-size: 14px; border-radius: 6px;
+    border: 1px solid var(--border); background: #fff; cursor: pointer;
+  }
+  button:hover { background: #f0f2f5; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: var(--accent-hover); }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  #status { color: var(--muted); font-size: 13px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px; padding: 20px;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .shot-img {
+    width: 100%; aspect-ratio: 1/1; object-fit: contain;
+    background: #000; display: block;
+  }
+  .card .meta {
+    padding: 6px 10px; font-size: 12px; color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .card .meta b { color: var(--text); }
+  textarea.prompt {
+    width: 100%; border: 0; outline: none; resize: vertical;
+    padding: 8px 10px; font-size: 12.5px; line-height: 1.45;
+    font-family: inherit; color: var(--text); background: #fafbfc;
+    min-height: 96px;
+  }
+  .card .actions {
+    display: flex; gap: 8px; padding: 8px 10px;
+    border-top: 1px solid var(--border);
+  }
+  .card .actions button { flex: 1; font-size: 13px; padding: 7px 10px; }
+  .btn-regen { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-regen:hover { background: var(--accent-hover); }
+  .card .img-path {
+    padding: 6px 10px 10px; font-size: 11px; color: var(--muted);
+    word-break: break-all;
+  }
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #111827; color: #fff; padding: 10px 18px; border-radius: 8px;
+    font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .2s;
+    max-width: 80vw;
+  }
+  #toast.show { opacity: 1; }
+  #toast.err { background: var(--danger); }
+</style>
+</head>
+<body>
+  <header>
+    <span class="title">即梦图像 Prompt 编辑与重抽</span>
+    <input type="text" id="metaPath" placeholder="输入 meta.json 的绝对路径，例如 E:\16.文生图\LTX-test\meta.json">
+    <button class="primary" id="btnLoad">加载</button>
+    <button id="btnSaveAll">保存全部 prompt</button>
+    <span id="status"></span>
+  </header>
+  <div class="grid" id="grid"></div>
+  <div id="toast"></div>
+
+  <script>
+    let currentMeta = '';
+    let shots = [];
+
+    const $ = (id) => document.getElementById(id);
+    const grid = $('grid');
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    function toast(msg, isErr) {
+      const t = $('toast');
+      t.textContent = msg;
+      t.classList.toggle('err', !!isErr);
+      t.classList.add('show');
+      clearTimeout(t._h);
+      t._h = setTimeout(() => t.classList.remove('show'), 3200);
+    }
+
+    async function post(url, body) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || ('请求失败 ' + res.status));
+      return data;
+    }
+
+    function textareaFor(index) {
+      return document.querySelector(`textarea.prompt[data-index="${index}"]`);
+    }
+    function promptOf(index) {
+      return textareaFor(index).value;
+    }
+
+    async function loadMeta() {
+      const path = $('metaPath').value.trim();
+      if (!path) { toast('请输入 meta.json 路径', true); return; }
+      $('btnLoad').disabled = true;
+      $('status').textContent = '加载中...';
+      try {
+        const data = await post('/api/load', { path });
+        currentMeta = path;
+        shots = data.shots;
+        renderShots();
+        $('status').textContent = `已加载 ${shots.length} 个关键帧（共 ${data.total_shots} 个分镜）`;
+        toast(`已加载 ${shots.length} 个关键帧`);
+      } catch (e) {
+        toast('加载失败：' + e.message, true);
+        $('status').textContent = '加载失败';
+      } finally {
+        $('btnLoad').disabled = false;
+      }
+    }
+
+    function renderShots() {
+      grid.innerHTML = '';
+      shots.forEach(s => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <img class="shot-img" data-index="${s.index}" src="${escapeHtml(s.image_src)}" loading="lazy" alt="${escapeHtml(s.shot_id || s.index)}">
+          <div class="meta">#<b>${s.index}</b> · <b>${escapeHtml(s.shot_id || '')}</b></div>
+          <textarea class="prompt" data-index="${s.index}" rows="5">${escapeHtml(s.prompt)}</textarea>
+          <div class="actions">
+            <button class="btn-save" data-index="${s.index}">保存 prompt</button>
+            <button class="btn-regen" data-index="${s.index}">重抽图像</button>
+          </div>
+          <div class="img-path" data-index="${s.index}" title="${escapeHtml(s.image_path)}">${escapeHtml(s.image_path)}</div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    grid.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const index = parseInt(btn.dataset.index, 10);
+      if (btn.classList.contains('btn-save')) savePrompt(index);
+      else if (btn.classList.contains('btn-regen')) regenerate(index, btn);
+    });
+
+    async function savePrompt(index) {
+      try {
+        await post('/api/save', { path: currentMeta, index, prompt: promptOf(index) });
+        toast(`#${index} prompt 已保存`);
+      } catch (e) {
+        toast('保存失败：' + e.message, true);
+      }
+    }
+
+    async function saveAll() {
+      const items = shots.map(s => ({ index: s.index, prompt: promptOf(s.index) }));
+      try {
+        const data = await post('/api/save_all', { path: currentMeta, items });
+        toast(`已保存 ${data.saved} 个 prompt`);
+      } catch (e) {
+        toast('保存失败：' + e.message, true);
+      }
+    }
+
+    async function regenerate(index, btn) {
+      const old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '生成中...';
+      try {
+        const data = await post('/api/regenerate', { path: currentMeta, index, prompt: promptOf(index) });
+        const img = document.querySelector(`img.shot-img[data-index="${index}"]`);
+        const pathEl = document.querySelector(`.img-path[data-index="${index}"]`);
+        if (img) { img.src = data.image_src; img.dataset.loaded = ''; }
+        if (pathEl) { pathEl.textContent = data.image_path; pathEl.title = data.image_path; }
+        toast(`#${index} 重抽完成`);
+      } catch (e) {
+        toast('重抽失败：' + e.message, true);
+        alert(e.message)
+      } finally {
+        btn.disabled = false;
+        btn.textContent = old;
+      }
+    }
+
+    $('btnLoad').addEventListener('click', loadMeta);
+    $('btnSaveAll').addEventListener('click', saveAll);
+    $('metaPath').addEventListener('keydown', e => { if (e.key === 'Enter') loadMeta(); });
+  </script>
+</body>
+</html>

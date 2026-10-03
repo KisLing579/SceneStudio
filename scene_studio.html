@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>关键场景工作台</title>
+<style>
+:root{font-family:system-ui,"Microsoft YaHei",sans-serif;color:#e3eaf6;background:#101722;color-scheme:dark}*{box-sizing:border-box}body{margin:0}main{max-width:1480px;margin:auto;padding:26px}h1{font-size:25px;margin:0 0 6px}p{color:#98a8bf}header{margin-bottom:22px}.toolbar{display:flex;gap:12px;align-items:end;flex-wrap:wrap;padding:18px;background:#1a2535;border-radius:12px}label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:#b6c5da}input,textarea,button{font:inherit;border:1px solid #40516a;border-radius:7px;padding:10px;background:#111c2b;color:inherit}input[type=number]{width:106px}input[type=checkbox]{accent-color:#6eacff;width:18px;height:18px}button{cursor:pointer;background:#285793;color:#fff;white-space:nowrap}button:hover:not(:disabled){background:#3470ba}button:disabled{opacity:.4;cursor:not-allowed}#project{width:230px}.secondary{background:#25364d}.thumbs{display:flex;gap:10px;overflow:auto;padding:14px 0}.thumbs figure{margin:0;flex:0 0 128px}.thumbs img{width:128px;height:86px;object-fit:contain;background:#090f18;border-radius:6px}.thumbs figcaption{font-size:12px;color:#899ebc;text-align:center}.group{border:1px dashed #657991;border-radius:12px;padding:18px;margin:20px 0;background:#162132}.group-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.group-head h3{margin:0;font-size:16px}.select{flex-direction:row;align-items:center}.row{display:grid;grid-template-columns:minmax(220px,1fr) 110px minmax(240px,1fr);gap:18px;align-items:center;margin-top:16px}textarea{width:100%;height:220px;resize:vertical;line-height:1.6;font-size:14px}textarea:focus{outline:2px solid #568ee1}.media{width:100%;height:260px;object-fit:contain;background:#0b111c;border-radius:8px}.placeholder{display:flex;align-items:center;justify-content:center;color:#8c9fb8;border:1px solid #2d3c51}.row button{width:100%}.hint{font-size:12px;margin-top:5px}#status{padding:12px 0;white-space:pre-wrap}#status.error{color:#ffaaa3}details{margin:10px 0}pre{white-space:pre-wrap;max-height:220px;overflow:auto;background:#0b111c;padding:14px;font-size:12px}#result{width:100%;max-height:620px;background:#080e17}#empty{padding:36px;text-align:center;border:1px dashed #40516a;border-radius:12px;color:#98a8bf}[hidden]{display:none!important}@media(max-width:760px){main{padding:14px}.row{grid-template-columns:1fr}.row button{width:auto;justify-self:start}.media{height:230px}.toolbar{gap:10px}textarea{height:180px}}
+</style>
+<style>
+#create.created{background:#23764f;border-color:#4db786}
+#create.created:hover:not(:disabled){background:#2d9063}
+#dialogueLanguage{font:inherit;padding:10px;border:1px solid #40516a;border-radius:7px;background:#111c2b;color:inherit}
+</style>
+<style>
+.busy-banner{position:sticky;top:12px;z-index:20;display:flex;align-items:center;gap:14px;margin:16px 0;padding:16px 20px;background:#19385a;border:1px solid #599fe8;border-radius:10px;box-shadow:0 6px 24px #0005}
+.busy-spinner{flex:none;width:26px;height:26px;border:3px solid #92beef40;border-top-color:#a9d2ff;border-radius:50%;animation:busy-spin .9s linear infinite}
+.busy-banner strong{display:block;color:#e3efff}.busy-banner p{margin:5px 0 0;font-size:13px;color:#adc7e6}
+@keyframes busy-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.busy-spinner{animation:none}}
+</style>
+</head>
+<body><main>
+<header><h1>关键场景工作台</h1><p>加载项目 · 编辑关键帧 · 生成视频段 · 勾选拼接</p></header>
+<div class="toolbar">
+<label>输入方式<select id="projectMode" style="font:inherit;padding:10px;border:1px solid #40516a;border-radius:7px;background:#111c2b;color:inherit"><option value="id">Project ID</option><option value="path">绝对路径</option></select></label>
+<label><span id="projectLabel">Project ID</span><input id="project" placeholder="输入 project_id" autocomplete="off"></label>
+<button id="load" class="secondary">加载项目</button>
+<label>max-frames<input id="maxFrames" type="number" min="9" max="480" value="480" step="1"></label>
+<label>frames-delta<input id="framesDelta" type="number" value="3" step="1"></label>
+<label class="select"><input id="promptWithText" type="checkbox" checked>对白</label>
+<label>对白语言<select id="dialogueLanguage"><option value="zh" selected>中文</option><option value="en">英文</option></select></label>
+<button id="batch" disabled>批量生成视频段</button><button id="concat" disabled>拼接视频段</button>
+<button id="toggleSelection" class="secondary" disabled>全选</button>
+<button id="create" disabled>创建关键场景帧</button><button id="save" class="secondary" disabled>保存提示词</button>
+</div>
+<div id="busyBanner" class="busy-banner" role="status" aria-live="polite" hidden><span class="busy-spinner" aria-hidden="true"></span><div><strong id="busyLabel">正在生成，请稍候…</strong><p>操作暂时锁定，完成后自动恢复。可查看下方任务日志。</p></div></div>
+<div id="status" role="status" aria-live="polite">请选择输入方式，输入项目 ID 或服务器上的绝对路径。</div>
+<p id="projectDirectory" class="hint"></p>
+<details><summary>任务日志</summary><pre id="log">暂无任务</pre></details>
+<div id="thumbs" class="thumbs" aria-label="原始图像缩略图列表"></div>
+<div id="empty">加载后点击「创建关键场景帧」，按关键帧规则选取图像并融合场景提示词。</div>
+<section id="groups"></section>
+<section id="resultSection" hidden><h2>拼接结果</h2><video id="result" controls preload="metadata"></video></section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const locale=new URLSearchParams(window.location.search).get('locale')==='en'?'en':'zh';
+const english={
+  '对白':'Dialogue','对白语言':'Dialogue language','中文':'Chinese','英文':'English',
+  '对白选项必须为布尔值':'Dialogue must be a boolean',
+  '对白语言必须为 zh 或 en':'Dialogue language must be zh or en',
+  '正在生成，请稍候…':'Generating, please wait…',
+  '正在处理，请稍候…':'Processing, please wait…',
+  '操作暂时锁定，完成后自动恢复。可查看下方任务日志。':'Controls are temporarily locked and will unlock when finished. You can view the task log below.', 
+  '✓ 关键场景帧已创建':'✓ Keyframes created',
+  '关键场景帧已保存在 meta.json 中，可点击重新创建。':'Keyframes are saved in meta.json. Click to recreate them.',
+  '全选':'Select all','全不选':'Deselect all',
+  '关键场景工作台':'LTX Scene Studio',
+  '加载项目 · 编辑关键帧 · 生成视频段 · 勾选拼接':'Load a project · Edit keyframes · Generate clips · Select and concatenate',
+  '输入方式':'Input mode','绝对路径':'Absolute path','输入 project_id':'Enter project_id',
+  '加载项目':'Load project','批量生成视频段':'Generate all clips','拼接视频段':'Concatenate clips',
+  '创建关键场景帧':'Create keyframes','保存提示词':'Save prompts',
+  '请选择输入方式，输入项目 ID 或服务器上的绝对路径。':'Choose an input mode and enter a project ID or an absolute path on the server.',
+  '任务日志':'Task log','暂无任务':'No tasks yet','原始图像缩略图列表':'Original image thumbnails',
+  '加载后点击「创建关键场景帧」，按关键帧规则选取图像并融合场景提示词。':'After loading, click “Create keyframes” to select images and merge scene prompts.',
+  '拼接结果':'Concatenated video','请求失败':'Request failed',
+  '原始分镜 {0}':'Original shot {0}','分镜 {0}':'Shot {0}',
+  '参与拼接':'Include in concatenation','关键帧图像提示词':'Keyframe image prompt','重抽':'Redraw',
+  '关键帧图像':'Keyframe image','融合后的关键帧场景提示词':'Merged keyframe scene prompt',
+  '开始生成':'Generate','重新生成':'Regenerate','待生成视频段':'Clip not generated yet',
+  '可单独生成此段，也可批量生成全部视频段。':'Generate this clip individually, or generate all clips in a batch.',
+  '场景 {0} · 关键帧 {1}':'Scene {0} · Keyframe {1}',
+  '任务完成，结果已更新。':'Task complete. Results updated.',
+  '状态读取失败：{0}；正在重试。':'Failed to read status: {0}. Retrying.',
+  'max-frames 需为 9–480 的整数，frames-delta 需为整数。':'max-frames must be an integer from 9 to 480; frames-delta must be an integer.',
+  '正在提交任务…':'Submitting task…','提示词已保存到 meta.json。':'Prompts saved to meta.json.',
+  '任务执行中，视频段完成后会依次显示…':'Task running. Clips will appear as they finish…',
+  '请输入 Project ID 或绝对路径。':'Enter a project ID or absolute path.',
+  '当前项目目录：':'Current project directory: ',
+  '已加载 {0} 张图像，{1} 组关键场景。':'Loaded {0} images and {1} key scene groups.',
+  '项目绝对路径':'Absolute project path','项目目录或 meta.json 的绝对路径':'Absolute path to the project directory or meta.json',
+  '请输入 Project ID 或绝对路径':'Enter a project ID or absolute path',
+  '请输入服务器上的绝对路径':'Enter an absolute path on the server',
+  '该路径不是项目目录或其中缺少 meta.json':'The path is not a project directory or is missing meta.json',
+  '未知项目输入模式':'Unknown project input mode','项目不存在或缺少 meta.json':'Project not found or meta.json is missing',
+  'project_id 只能包含字母、数字、下划线和连字符':'project_id may contain only letters, numbers, underscores and hyphens'
+};
+function t(key,...values){return (locale==='en'?(english[key]||key):key).replace(/\{(\d+)\}/g,(_,i)=>String(values[Number(i)]??''));}
+// Translate only UI nodes, before inserting user prompts or project content.
+function translateUI(root){
+  if(locale!=='en')return;
+  const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+  let node;while((node=walker.nextNode())){const key=node.textContent.trim();if(english[key])node.textContent=node.textContent.replace(key,english[key]);}
+  for(const element of root.querySelectorAll('[placeholder],[aria-label],[alt]')){
+    for(const attr of ['placeholder','aria-label','alt']){const value=element.getAttribute(attr);if(value&&english[value])element.setAttribute(attr,english[value]);}
+  }
+}
+document.documentElement.lang=locale==='en'?'en':'zh-CN';
+document.title=t('关键场景工作台');translateUI(document.querySelector('main'));
+let projectId='', state=null, busy=false, dirty=false, timer=null, busyAction='';
+const cards=new Map();
+let completionAudio=null;
+const notifiedJobs=new Set();
+function prepareCompletionAudio(){
+  try{
+    const AudioContext=window.AudioContext||window.webkitAudioContext;
+    if(!AudioContext)return;
+    if(!completionAudio)completionAudio=new AudioContext();
+    // Resume during the button click so delayed playback is allowed.
+    if(completionAudio.state==='suspended')completionAudio.resume().catch(()=>{});
+  }catch(e){/* Audio support must not block generation. */}
+}
+async function notifyVideoComplete(job){
+  if(job.status!=='done'||!['video','batch'].includes(job.action)||!job.id||notifiedJobs.has(job.id))return;
+  notifiedJobs.add(job.id);
+  try{
+    if(!completionAudio)return;
+    if(completionAudio.state==='suspended')await completionAudio.resume();
+    const start=completionAudio.currentTime;
+    [660,880,1100].forEach((frequency,index)=>{
+      const oscillator=completionAudio.createOscillator(),gain=completionAudio.createGain();
+      const at=start+index*.25;
+      oscillator.frequency.value=frequency;
+      gain.gain.setValueAtTime(0,at);
+      gain.gain.linearRampToValueAtTime(.16,at+.02);
+      gain.gain.exponentialRampToValueAtTime(.001,at+.4);
+      oscillator.connect(gain);gain.connect(completionAudio.destination);
+      oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();};
+      oscillator.start(at);oscillator.stop(at+.42);
+    });
+  }catch(e){/* Keep the completion message available if sound is blocked. */}
+}
+function message(text,error=false){$('status').textContent=text;$('status').classList.toggle('error',error);}
+async function api(path,body){const r=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||!d.ok)throw Error(t(d.error||'请求失败'));return d;}
+function base(){return '/api/projects/'+encodeURIComponent(projectId);}
+function controls(){
+  $('busyBanner').hidden=!busy;
+  $('busyLabel').textContent=t(['video','batch','image','create','concat'].includes(busyAction)?'正在生成，请稍候…':'正在处理，请稍候…');
+  $('groups').setAttribute('aria-busy',String(busy));
+  $('load').disabled=busy;$('project').disabled=busy;$('projectMode').disabled=busy;$('maxFrames').disabled=busy;$('framesDelta').disabled=busy;
+  $('create').disabled=busy||!state;
+  $('promptWithText').disabled=busy;$('dialogueLanguage').disabled=busy;
+  const framesCreated=!!state?.groups?.length;
+  $('create').classList.toggle('created',framesCreated);
+  $('create').textContent=t(framesCreated?'✓ 关键场景帧已创建':'创建关键场景帧');
+  $('create').title=framesCreated?t('关键场景帧已保存在 meta.json 中，可点击重新创建。'):'';
+  for(const id of ['save','batch'])$(id).disabled=busy||!state?.groups.length;
+  const selected=[...cards.values()].filter(c=>c.check.checked);
+  $('toggleSelection').disabled=busy||!cards.size;
+  $('toggleSelection').textContent=t(cards.size&&selected.length===cards.size?'全不选':'全选');
+  $('concat').disabled=busy||!selected.length||selected.some(c=>!c.videoUrl);
+  for(const c of cards.values()){c.redraw.disabled=busy;c.regen.disabled=busy;c.regen.textContent=t(c.generationStarted||c.videoUrl?'重新生成':'开始生成');c.imagePrompt.disabled=busy;c.videoPrompt.disabled=busy;c.check.disabled=busy;}
+}
+function setMedia(element,url){if(url&&element.getAttribute('src')!==url)element.src=url;}
+function updateMedia(data){
+  for(const group of data.groups){const c=cards.get(group.index);if(!c)continue;setMedia(c.image,group.image);c.videoUrl=group.video;c.generationStarted=c.generationStarted||group.generation_started||!!group.video; c.video.hidden=!group.video;c.placeholder.hidden=!!group.video;if(group.video)setMedia(c.video,group.video);}
+  $('resultSection').hidden=!data.result;if(data.result)setMedia($('result'),data.result);
+  controls();
+}
+function render(data){
+  cards.clear();$('groups').replaceChildren();$('thumbs').replaceChildren();
+  data.thumbnails.forEach((src,i)=>{const fig=document.createElement('figure'),img=document.createElement('img'),caption=document.createElement('figcaption');img.src=src+'&refresh='+Date.now();img.loading='lazy';img.alt=t('原始分镜 {0}',i+1);caption.textContent=t('分镜 {0}',i+1);fig.append(img,caption);$('thumbs').append(fig);});
+  $('empty').hidden=!!data.groups.length;
+  for(const g of data.groups){
+    const el=document.createElement('article');el.className='group';
+    el.innerHTML='<div class="group-head"><h3></h3><label class="select"><input type="checkbox" checked>参与拼接</label></div><div class="row"><label>关键帧图像提示词<textarea class="image-prompt"></textarea></label><button class="redraw">重抽</button><img class="media frame" alt="关键帧图像"></div><div class="row"><label>融合后的关键帧场景提示词<textarea class="video-prompt"></textarea></label><button class="regen">开始生成</button><div><div class="media placeholder">待生成视频段</div><video class="media clip" controls preload="metadata" hidden></video><div class="hint">可单独生成此段，也可批量生成全部视频段。</div></div></div>';
+    translateUI(el);
+    el.querySelector('h3').textContent=t('场景 {0} · 关键帧 {1}',g.scene_id,g.index+1);
+    const c={check:el.querySelector('input'),imagePrompt:el.querySelector('.image-prompt'),videoPrompt:el.querySelector('.video-prompt'),redraw:el.querySelector('.redraw'),regen:el.querySelector('.regen'),image:el.querySelector('.frame'),video:el.querySelector('.clip'),placeholder:el.querySelector('.placeholder'),videoUrl:g.video,generationStarted:!!g.generation_started||!!g.video};
+    c.imagePrompt.value=g.image_prompt;c.videoPrompt.value=g.video_prompt;
+    c.imagePrompt.oninput=c.videoPrompt.oninput=()=>{dirty=true;};c.check.onchange=controls;
+    c.redraw.onclick=()=>act('image',{index:g.index});c.regen.onclick=()=>act('video',{index:g.index});
+    cards.set(g.index,c);$('groups').append(el);
+  }
+  updateMedia(data);
+}
+function edits(){return [...cards].map(([index,c])=>({index,image_prompt:c.imagePrompt.value,video_prompt:c.videoPrompt.value}));}
+async function poll(){
+  try{
+    const data=await api(base());state=data;$('log').textContent=data.job.log||t('暂无任务');updateMedia(data);
+    if(data.job.status==='running'){busyAction=data.job.action;busy=true;controls();timer=setTimeout(poll,1500);return;}
+    busy=false;if(data.job.status==='done'&&data.job.action==='create')render(data);
+    void notifyVideoComplete(data.job);
+    message(data.job.status==='error'?t(data.job.error):t('任务完成，结果已更新。'),data.job.status==='error');controls();
+  }catch(e){message(t('状态读取失败：{0}；正在重试。',e.message),true);timer=setTimeout(poll,3000);}
+}
+async function act(action,extra={}){
+  if(busy)return;
+  const max=Number($('maxFrames').value),delta=Number($('framesDelta').value);
+  if(!Number.isInteger(max)||max<9||max>480||!Number.isInteger(delta)){message(t('max-frames 需为 9–480 的整数，frames-delta 需为整数。'),true);return;}
+  if(action==='video'||action==='batch')prepareCompletionAudio();
+  busyAction=action;busy=true;controls();message(t('正在提交任务…'));
+  try{
+    await api(base()+'/'+action,{max_frames:max,frames_delta:delta,prompt_with_text:$('promptWithText').checked,language:$('dialogueLanguage').value,edits:edits(),...extra});dirty=false;
+    if(action==='batch'||action==='video'){for(const [index,c] of cards){if(action==='batch'||index===extra.index)c.generationStarted=true;}controls();}
+    if(action==='save'){busy=false;controls();message(t('提示词已保存到 meta.json。'));return;}
+    message(t('任务执行中，视频段完成后会依次显示…'));await poll();
+  }catch(e){busy=false;controls();message(e.message,true);}
+}
+$('load').onclick=async()=>{
+  const next=$('project').value.trim();if(!next){message(t('请输入 Project ID 或绝对路径。'),true);return;}
+  prepareCompletionAudio();
+  busyAction='load';busy=true;controls();clearTimeout(timer);
+  try{
+    if(dirty&&projectId){await api(base()+'/save',{edits:edits()});dirty=false;}
+    const data=await api('/api/load',{mode:$('projectMode').value,value:next});projectId=data.project_id;state=data;busy=data.job.status==='running';busyAction=data.job.action||'load';render(data);$('projectDirectory').textContent=t('当前项目目录：')+data.project_directory;$('log').textContent=data.job.log||t('暂无任务');message(t('已加载 {0} 张图像，{1} 组关键场景。',data.thumbnails.length,data.groups.length));if(busy)poll();
+  }catch(e){busy=false;message(e.message,true);}controls();
+};
+$('project').addEventListener('keydown',e=>{if(e.key==='Enter')$('load').click();});
+$('projectMode').onchange=()=>{const path=$('projectMode').value==='path';$('projectLabel').textContent=path?t('项目绝对路径'):'Project ID';$('project').placeholder=path?t('项目目录或 meta.json 的绝对路径'):t('输入 project_id');$('project').value='';};
+$('create').onclick=()=>act('create');$('batch').onclick=()=>act('batch');$('save').onclick=()=>act('save');
+$('concat').onclick=()=>act('concat',{selected:[...cards].filter(([,c])=>c.check.checked).map(([i])=>i)});
+$('toggleSelection').onclick=()=>{
+  if(busy||!cards.size)return;
+  const selectAll=![...cards.values()].every(c=>c.check.checked);
+  for(const c of cards.values())c.check.checked=selectAll;
+  controls();
+};
+window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
+const linkedProjectPath=new URLSearchParams(window.location.search).get('project_path');
+if(linkedProjectPath){
+  $('projectMode').value='path';$('projectMode').onchange();
+  $('project').value=linkedProjectPath;$('load').click();
+}
+</script></body></html>

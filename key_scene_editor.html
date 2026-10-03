@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>关键帧视频拼接（淡入淡出）</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --border: #e3e6ea;
+    --text: #1f2328;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --danger: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: #fff; border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  }
+  header .title { font-weight: 600; margin-right: 8px; white-space: nowrap; }
+  header input[type="text"] {
+    flex: 1 1 360px; min-width: 220px;
+    padding: 8px 12px; font-size: 14px;
+    border: 1px solid var(--border); border-radius: 6px;
+  }
+  button {
+    padding: 8px 14px; font-size: 14px; border-radius: 6px;
+    border: 1px solid var(--border); background: #fff; cursor: pointer;
+  }
+  button:hover { background: #f0f2f5; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: var(--accent-hover); }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  #status { color: var(--muted); font-size: 13px; width: 100%; }
+  .fade-field { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .fade-field input { width: 60px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+  .toolbar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 20px; font-size: 13px; color: var(--muted);
+    border-bottom: 1px solid var(--border); background: #fbfcfd;
+  }
+  .toolbar label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .list { padding: 8px 20px 24px; max-height: calc(100vh - 150px); overflow-y: auto; }
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; margin: 4px 0;
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    cursor: pointer; user-select: none;
+  }
+  .row:hover { border-color: #c9d2dd; }
+  .row input[type="checkbox"] { width: 16px; height: 16px; flex: 0 0 auto; }
+  .row .name { flex: 1 1 auto; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .dur { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; font-size: 14px; }
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #111827; color: #fff; padding: 10px 18px; border-radius: 8px;
+    font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .2s;
+    max-width: 84vw; word-break: break-all;
+  }
+  #toast.show { opacity: 1; }
+  #toast.err { background: var(--danger); }
+</style>
+</head>
+<body>
+  <header>
+    <span class="title">关键帧视频拼接</span>
+    <input type="text" id="dirPath" placeholder="输入视频目录路径，例如 E:\16.文生图\LTX-test\out">
+    <button class="primary" id="btnConcat">拼接选中视频</button>
+    <span class="fade-field">淡入淡出(秒)
+      <input type="number" id="fade" value="0.5" step="0.1" min="0" max="5">
+    </span>
+    <span id="status"></span>
+  </header>
+  <div class="toolbar">
+    <label><input type="checkbox" id="checkAll" checked> 全选 / 全不选</label>
+    <span id="count"></span>
+  </div>
+  <div class="list" id="list"></div>
+  <div id="toast"></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    function toast(msg, isErr) {
+      const t = $('toast');
+      t.textContent = msg;
+      t.classList.toggle('err', !!isErr);
+      t.classList.add('show');
+      clearTimeout(t._h);
+      t._h = setTimeout(() => t.classList.remove('show'), 4000);
+    }
+
+    async function post(url, body) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || ('请求失败 ' + res.status));
+      return data;
+    }
+
+    function fmtDur(s) {
+      const m = Math.floor(s / 60);
+      const sec = s - m * 60;
+      return `${m}:${sec.toFixed(1).padStart(4, '0')}`;
+    }
+
+    function renderList(videos) {
+      const list = $('list');
+      list.innerHTML = '';
+      if (!videos.length) {
+        list.innerHTML = '<div class="empty">该目录下没有视频文件</div>';
+        return;
+      }
+      videos.forEach(v => {
+        const row = document.createElement('label');
+        row.className = 'row';
+        row.innerHTML = `
+          <input type="checkbox" class="chk" data-name="${escapeHtml(v.name)}" checked>
+          <span class="name" title="${escapeHtml(v.name)}">${escapeHtml(v.name)}</span>
+          <span class="dur">${v.duration == null ? '' : fmtDur(v.duration)}</span>`;
+        list.appendChild(row);
+      });
+      updateCount();
+      $('checkAll').checked = true;
+    }
+
+    function updateCount() {
+      const chks = [...document.querySelectorAll('.chk')];
+      const n = chks.filter(c => c.checked).length;
+      $('count').textContent = `已选 ${n} / ${chks.length}`;
+      $('checkAll').checked = chks.length > 0 && n === chks.length;
+    }
+
+    async function loadList() {
+      const path = $('dirPath').value.trim();
+      if (!path) { toast('请输入目录路径', true); return; }
+      $('status').textContent = '加载中...';
+      try {
+        const data = await post('/api/list', { path });
+        renderList(data.videos);
+        $('status').textContent = `目录 ${data.directory}：${data.videos.length} 个视频`;
+      } catch (e) {
+        toast('加载失败：' + e.message, true);
+        $('status').textContent = '加载失败';
+      }
+    }
+
+    async function doConcat() {
+      const path = $('dirPath').value.trim();
+      if (!path) { toast('请输入目录路径', true); return; }
+      const names = [];
+      document.querySelectorAll('.chk').forEach(c => {
+        if (c.checked) names.push(c.dataset.name);
+      });
+      if (!names.length) { toast('没有勾选任何视频', true); return; }
+      const fade = parseFloat($('fade').value);
+      const btn = $('btnConcat');
+      btn.disabled = true;
+      const old = btn.textContent;
+      btn.textContent = '拼接中...';
+      $('status').textContent = `正在拼接 ${names.length} 个视频（淡入淡出 ${fade}s）...`;
+      try {
+        const data = await post('/api/concat', { path, videos: names, fade });
+        toast('拼接完成：' + data.output);
+        $('status').textContent = '输出：' + data.output;
+      } catch (e) {
+        toast('拼接失败：' + e.message, true);
+        $('status').textContent = '拼接失败';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = old;
+      }
+    }
+
+    $('btnConcat').addEventListener('click', doConcat);
+    $('dirPath').addEventListener('keydown', e => { if (e.key === 'Enter') loadList(); });
+    $('checkAll').addEventListener('change', e => {
+      document.querySelectorAll('.chk').forEach(c => { c.checked = e.target.checked; });
+      updateCount();
+    });
+    $('list').addEventListener('change', e => {
+      if (e.target.classList.contains('chk')) updateCount();
+    });
+
+    // 启动：读默认目录（若有）并加载列表
+    (async function init() {
+      try {
+        const r = await fetch('/api/config');
+        const cfg = await r.json();
+        if (cfg.default_dir) $('dirPath').value = cfg.default_dir;
+      } catch (e) {}
+      await loadList();
+    })();
+  </script>
+</body>
+</html>
