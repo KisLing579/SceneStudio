@@ -209,3 +209,9 @@ python prompt_editor.py [--host 127.0.0.1] [--port 8000]
 
 > 重抽后的图像与 prompt 已更新进 `meta.json`，但下游视频仍需重新运行 `generate_shots.py` /
 > `generate_clips.py`（建议加 `--force`）才会按新首图与新 prompt 重新生成。
+
+## 视频教程
+观看这个分步演示教程，了解如何使用 Novel Engine 创建项目、生成章节并导出故事；使用 Mindawaker 将小说转换为多媒体素材；最后通过 Scene Studio + LTX 2.5 将这些素材制作成完整的视频。
+
+[▶ 观看视频](https://youtu.be/Cjfw1-kFnxc)
+
