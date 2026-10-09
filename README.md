@@ -195,3 +195,10 @@ Output locations differ between tool families: `generate_shots.py` writes to Sce
 | `GET /api/projects/{project_id}/media/{kind}/{index}` | Serve thumbnails, images, clips, or assembled output |
 
 The service defaults to `127.0.0.1` and has no account authentication. It accepts server-side project paths and is intended for local or trusted-network use. The web dependency list alone is insufficient for GPU generation: validate the LTX runtime, configured weights, and FFmpeg independently when diagnosing failed jobs.
+
+
+## Video Walkthrough
+
+Watch this step-by-step demo to learn how to create a project, generate chapters, and export your story with **Novel Engine**, transform your novel into multimedia assets with **Mindawaker**, and turn those assets into a video using **Scene Studio + LTX 2.5**.
+
+[▶ Watch the video](https://youtu.be/Cjfw1-kFnxc)
